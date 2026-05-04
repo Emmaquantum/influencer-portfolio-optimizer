@@ -23,11 +23,22 @@ np.random.seed(42)
 
 
 def plotly_html(fig: go.Figure, height: int = 500) -> None:
-    html = fig.to_html(
+    fig_html = fig.to_html(
         full_html=False, include_plotlyjs="cdn",
         config={"responsive": True, "displayModeBar": False},
     )
-    components.html(html, height=height + 40, scrolling=False)
+    mobile_h = min(height, 340)
+    wrapped = f"""
+    <style>
+      .ply-wrap {{ width:100%; height:{height}px; }}
+      @media screen and (max-width:768px) {{
+        .ply-wrap {{ height:{mobile_h}px !important; }}
+      }}
+    </style>
+    <div class="ply-wrap">{fig_html}</div>
+    <script>window.dispatchEvent(new Event('resize'));</script>
+    """
+    components.html(wrapped, height=height + 40, scrolling=False)
 
 
 # ─────────────────────────────────────────────
@@ -440,10 +451,16 @@ def efficient_frontier_points(df, sim_results, presupuesto, n_points=50):
 
 PLOTLY_THEME = dict(
     paper_bgcolor="#0e1117", plot_bgcolor="#161b22",
-    font=dict(color="#c9d1d9",family="Inter,sans-serif"),
-    xaxis=dict(gridcolor="#21262d",linecolor="#30363d"),
-    yaxis=dict(gridcolor="#21262d",linecolor="#30363d"),
-    legend=dict(bgcolor="#161b22",bordercolor="#30363d",borderwidth=1),
+    font=dict(color="#c9d1d9", family="Inter,sans-serif", size=11),
+    xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+    yaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+    legend=dict(
+        bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363d", borderwidth=1,
+        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+        font=dict(size=10),
+    ),
+    margin=dict(l=48, r=16, t=64, b=48),
+    autosize=True,
 )
 
 
@@ -454,14 +471,14 @@ def plot_catalog_bubble(scores_df):
         if sub.empty: continue
         fig.add_trace(go.Scatter(
             x=sub["eng_rate"]*100, y=sub["score"],
-            mode="markers+text",
-            marker=dict(size=np.clip(sub["followers"]/15_000,8,50),
-                        color=color, opacity=0.82,
-                        line=dict(width=1.2,color="#0e1117")),
-            text=[h.replace("@","") for h in sub.index],
-            textposition="top center",
-            textfont=dict(size=9,color="#c9d1d9"),
+            mode="markers",   # sin texto — solo hover, legible en mobile
+            marker=dict(
+                size=np.clip(sub["followers"]/20_000, 7, 34),
+                color=color, opacity=0.85,
+                line=dict(width=1, color="#0e1117"),
+            ),
             name=f"{CATEGORY_ICONS.get(cat,'')} {cat}",
+            text=[h.replace("@","") for h in sub.index],
             customdata=np.column_stack([
                 sub["followers"].map("{:,}".format),
                 sub["cost_cop"].map("${:,.0f}".format),
@@ -469,16 +486,21 @@ def plot_catalog_bubble(scores_df):
                 (sub["kappa_eff"]*100).round(0),
             ]),
             hovertemplate=(
-                "<b>%{text}</b><br>Score: %{customdata[2]}<br>"
-                "Eng: %{x:.2f}%<br>Followers: %{customdata[0]}<br>"
-                "Costo: %{customdata[1]}<br>Tier: %{customdata[3]}<br>"
-                "κ fit campaña: %{customdata[4]}%<extra></extra>"
+                "<b>@%{text}</b><br>"
+                "Score: <b>%{customdata[2]}</b><br>"
+                "Eng: %{x:.2f}%<br>"
+                "Followers: %{customdata[0]}<br>"
+                "Costo: %{customdata[1]}<br>"
+                "Tier: %{customdata[3]}<br>"
+                "κ fit: %{customdata[4]}%<extra></extra>"
             ),
         ))
     fig.update_layout(
-        title="Mapa de Influencers — Score vs Engagement (tamaño = followers, color = categoría)",
-        xaxis_title="Engagement Rate (%)", yaxis_title="Score Compuesto (0–100)",
-        height=580, **PLOTLY_THEME,
+        title="Score vs Engagement — todos los influencers",
+        xaxis_title="Engagement Rate (%)",
+        yaxis_title="Score (0–100)",
+        height=460,
+        **PLOTLY_THEME,
     )
     return fig
 
@@ -891,12 +913,12 @@ def main():
 
     # ── Mapa de todos los influencers ──
     st.markdown("### Mapa Completo (45 influencers)")
-    plotly_html(plot_catalog_bubble(scores_df), height=580)
+    plotly_html(plot_catalog_bubble(scores_df), height=460)
 
     # ── Heatmap de parámetros SDE ──
     st.markdown("### Parámetros SDE Efectivos — Top 20")
     st.caption("μ y σ vienen del tier+contexto · γ del eng_rate real · δ y κ de la campaña modulada por fit")
-    plotly_html(plot_params_heatmap(scores_df), height=320)
+    plotly_html(plot_params_heatmap(scores_df), height=300)
 
     # ── Ranking por categoría (tabs) ──
     st.markdown("### Ranking Detallado por Categoría")
@@ -945,12 +967,12 @@ def main():
 
     st.markdown("<br>", unsafe_allow_html=True)
     cl,cr = st.columns([1.2,1])
-    with cl: plotly_html(plot_efficient_frontier(df,sim_results,front,opt,scores_df),height=500)
-    with cr: plotly_html(plot_roi_dist(opt),height=340)
+    with cl: plotly_html(plot_efficient_frontier(df,sim_results,front,opt,scores_df),height=460)
+    with cr: plotly_html(plot_roi_dist(opt),height=320)
 
     plotly_html(plot_allocation(opt,scores_df),
-                height=max(350,36*len(opt["allocation_cop"])))
-    plotly_html(plot_stochastic_projection(sim_results,opt),height=420)
+                height=max(320,32*len(opt["allocation_cop"])))
+    plotly_html(plot_stochastic_projection(sim_results,opt),height=400)
 
     # Tabla del portafolio
     st.markdown("### Composición del Portafolio")
